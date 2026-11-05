@@ -1,0 +1,41 @@
+name: Test moving an existing tag
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Set up remote with stale 'latest' tag and a new commit
+        run: |
+          git config user.email "test@example.com"
+          git config user.name "Test User"
+          REMOTE="$RUNNER_TEMP/remote-move.git"
+          rm -rf "$REMOTE"
+          git init --bare "$REMOTE"
+          git -C "$REMOTE" config receive.shallowUpdate true
+          git remote set-url origin "$REMOTE" 2>/dev/null || git remote add origin "$REMOTE"
+          git tag -f latest HEAD
+          git push origin refs/tags/latest
+          OLD_SHA="$(git rev-parse HEAD)"
+          git commit --allow-empty -m "new commit for latest-tag test"
+          echo "REMOTE=$REMOTE" >> "$GITHUB_ENV"
+          echo "OLD_SHA=$OLD_SHA" >> "$GITHUB_ENV"
+      - id: action
+        uses: .
+      - name: Assert remote 'latest' moved to new HEAD
+        run: |
+          HEAD_SHA="$(git rev-parse HEAD)"
+          REMOTE_SHA="$(git --git-dir="$REMOTE" rev-parse 'refs/tags/latest^{commit}' 2>/dev/null || true)"
+          echo "old: $OLD_SHA head: $HEAD_SHA remote: $REMOTE_SHA"
+          if [ "$HEAD_SHA" = "$OLD_SHA" ]; then
+            echo "FAIL: test setup did not create a new commit"
+            exit 1
+          fi
+          if [ "$REMOTE_SHA" != "$HEAD_SHA" ]; then
+            echo "FAIL: remote 'latest' was not moved to new HEAD"
+            exit 1
+          fi
+          echo "PASS"

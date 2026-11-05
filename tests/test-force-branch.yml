@@ -1,0 +1,38 @@
+name: Test force-branch mode
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Point origin at a local bare repo
+        run: |
+          REMOTE="$RUNNER_TEMP/remote-branch.git"
+          rm -rf "$REMOTE"
+          git init --bare "$REMOTE"
+          git -C "$REMOTE" config receive.shallowUpdate true
+          git remote set-url origin "$REMOTE" 2>/dev/null || git remote add origin "$REMOTE"
+          git branch -D released 2>/dev/null || true
+          echo "REMOTE=$REMOTE" >> "$GITHUB_ENV"
+      - id: action
+        uses: .
+        with:
+          ref: released
+          force-branch: 'true'
+      - name: Assert branch 'released' pushed at HEAD and no tag created
+        run: |
+          HEAD_SHA="$(git rev-parse HEAD)"
+          REMOTE_SHA="$(git --git-dir="$REMOTE" rev-parse refs/heads/released 2>/dev/null || true)"
+          echo "head: $HEAD_SHA remote branch: $REMOTE_SHA"
+          if [ "$REMOTE_SHA" != "$HEAD_SHA" ]; then
+            echo "FAIL: remote branch 'released' does not point at HEAD"
+            exit 1
+          fi
+          if git --git-dir="$REMOTE" rev-parse -q --verify refs/tags/released >/dev/null; then
+            echo "FAIL: a tag named 'released' should not exist"
+            exit 1
+          fi
+          echo "PASS"

@@ -1,0 +1,42 @@
+name: Test custom git-directory
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Create a separate repo with its own origin
+        run: |
+          WORK="$RUNNER_TEMP/other-repo"
+          REMOTE="$RUNNER_TEMP/other-remote.git"
+          rm -rf "$WORK" "$REMOTE"
+          git init --bare "$REMOTE"
+          git init "$WORK"
+          git -C "$WORK" config user.email "test@example.com"
+          git -C "$WORK" config user.name "Test User"
+          echo hello > "$WORK/file.txt"
+          git -C "$WORK" add file.txt
+          git -C "$WORK" commit -m "initial"
+          git -C "$WORK" remote add origin "$REMOTE"
+          echo "WORK=$WORK" >> "$GITHUB_ENV"
+          echo "REMOTE=$REMOTE" >> "$GITHUB_ENV"
+      - id: action
+        uses: .
+        with:
+          git-directory: ${{ env.WORK }}
+          ref: other-latest
+      - name: Assert tag created in the other repo's remote
+        run: |
+          OTHER_HEAD="$(git -C "$WORK" rev-parse HEAD)"
+          REMOTE_SHA="$(git --git-dir="$REMOTE" rev-parse 'refs/tags/other-latest^{commit}' 2>/dev/null || true)"
+          echo "other head: $OTHER_HEAD remote: $REMOTE_SHA"
+          if [ "$REMOTE_SHA" != "$OTHER_HEAD" ]; then
+            echo "FAIL: tag not pushed from git-directory repo"
+            exit 1
+          fi
+          if git rev-parse -q --verify refs/tags/other-latest >/dev/null; then
+            echo "FAIL: tag should not be created in the workspace repo"
+            exit 1
+          fi
+          echo "PASS"

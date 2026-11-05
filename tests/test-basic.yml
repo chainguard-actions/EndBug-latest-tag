@@ -1,0 +1,36 @@
+name: Test basic lightweight latest tag
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Point origin at a local bare repo
+        run: |
+          REMOTE="$RUNNER_TEMP/remote-basic.git"
+          rm -rf "$REMOTE"
+          git init --bare "$REMOTE"
+          git -C "$REMOTE" config receive.shallowUpdate true
+          git remote set-url origin "$REMOTE" 2>/dev/null || git remote add origin "$REMOTE"
+          git tag -d latest 2>/dev/null || true
+          echo "REMOTE=$REMOTE" >> "$GITHUB_ENV"
+      - id: action
+        uses: .
+      - name: Assert lightweight 'latest' tag pushed at HEAD
+        run: |
+          HEAD_SHA="$(git rev-parse HEAD)"
+          REMOTE_SHA="$(git --git-dir="$REMOTE" rev-parse 'refs/tags/latest^{commit}' 2>/dev/null || true)"
+          TYPE="$(git --git-dir="$REMOTE" cat-file -t refs/tags/latest 2>/dev/null || true)"
+          echo "head: $HEAD_SHA remote: $REMOTE_SHA type: $TYPE"
+          if [ "$REMOTE_SHA" != "$HEAD_SHA" ]; then
+            echo "FAIL: remote 'latest' tag does not point at HEAD"
+            exit 1
+          fi
+          if [ "$TYPE" != "commit" ]; then
+            echo "FAIL: expected lightweight tag (object type commit), got '$TYPE'"
+            exit 1
+          fi
+          echo "PASS"

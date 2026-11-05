@@ -1,0 +1,47 @@
+name: Test existing latest tag is moved to new HEAD
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up scratch repo with an old 'latest' tag on origin
+        run: |
+          set -e
+          rm -rf /tmp/lt && mkdir -p /tmp/lt
+          git init --bare /tmp/lt/remote.git
+          git init /tmp/lt/work
+          cd /tmp/lt/work
+          git config user.email "test@example.com"
+          git config user.name "Test User"
+          echo one > file.txt
+          git add file.txt
+          git commit -m "first"
+          git tag latest
+          git remote add origin /tmp/lt/remote.git
+          git push origin HEAD:refs/heads/main refs/tags/latest
+          git rev-parse HEAD > /tmp/lt/old-sha
+          echo two > file.txt
+          git commit -am "second"
+          git push origin HEAD:refs/heads/main
+      - id: action
+        uses: .
+        with:
+          ref: latest
+          git-directory: /tmp/lt/work
+      - name: Assert tag moved
+        run: |
+          OLD_SHA=$(cat /tmp/lt/old-sha)
+          HEAD_SHA=$(git -C /tmp/lt/work rev-parse HEAD)
+          REMOTE_SHA=$(git -C /tmp/lt/remote.git rev-parse 'refs/tags/latest^{commit}' 2>/dev/null || true)
+          echo "old: $OLD_SHA head: $HEAD_SHA remote: $REMOTE_SHA"
+          if [ "$REMOTE_SHA" = "$OLD_SHA" ]; then
+            echo "FAIL: tag was not moved"
+            exit 1
+          fi
+          if [ "$REMOTE_SHA" != "$HEAD_SHA" ]; then
+            echo "FAIL: tag does not point at new HEAD"
+            exit 1
+          fi
+          echo "PASS"

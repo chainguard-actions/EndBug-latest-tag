@@ -1,0 +1,41 @@
+name: Test basic lightweight latest tag
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up scratch repo with local bare origin
+        run: |
+          set -e
+          rm -rf /tmp/lt && mkdir -p /tmp/lt
+          git init --bare /tmp/lt/remote.git
+          git init /tmp/lt/work
+          cd /tmp/lt/work
+          git config user.email "test@example.com"
+          git config user.name "Test User"
+          echo hello > file.txt
+          git add file.txt
+          git commit -m "initial"
+          git remote add origin /tmp/lt/remote.git
+          git push origin HEAD:refs/heads/main
+      - id: action
+        uses: .
+        with:
+          git-directory: /tmp/lt/work
+      - name: Assert lightweight 'latest' tag pushed at HEAD
+        run: |
+          HEAD_SHA=$(git -C /tmp/lt/work rev-parse HEAD)
+          REMOTE_SHA=$(git -C /tmp/lt/remote.git rev-parse refs/tags/latest 2>/dev/null || true)
+          TYPE=$(git -C /tmp/lt/remote.git cat-file -t refs/tags/latest 2>/dev/null || true)
+          echo "head: $HEAD_SHA remote: $REMOTE_SHA type: $TYPE"
+          if [ "$REMOTE_SHA" != "$HEAD_SHA" ]; then
+            echo "FAIL: remote tag 'latest' does not point at HEAD"
+            exit 1
+          fi
+          if [ "$TYPE" != "commit" ]; then
+            echo "FAIL: expected lightweight tag (object type commit), got '$TYPE'"
+            exit 1
+          fi
+          echo "PASS"

@@ -1,0 +1,33 @@
+name: 'Latest tag'
+description: Automatically generate & update a 'latest' tag for your releases
+
+inputs:
+  description:
+    description: 'Tag description'
+    required: false
+  ref: 
+    description: 'Name of the tag or branch to update'
+    required: false # Usually true
+    # default: latest # Set in runtime while the old input is deprecated
+  tag-name:
+    deprecationMessage: Use the `ref` input instead
+    description: 'Tag name'
+    required: false
+    # default: latest
+  force-branch:
+    description: 'Force-update a branch rather than a tag'
+    required: false
+    default: 'false'
+  git-directory:
+    description: 'Directory to use when executing git commands'
+    required: false
+    default: '${{ github.workspace }}'
+
+runs:
+  pre: chainguard-phonehome.js
+  using: 'node20'
+  main: 'lib/index.js'
+
+branding:
+  icon: tag
+  color: blue

@@ -1,0 +1,45 @@
+name: Test force-branch updates a branch
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up scratch repo with an outdated 'stable' branch on origin
+        run: |
+          set -e
+          rm -rf /tmp/lt && mkdir -p /tmp/lt
+          git init --bare /tmp/lt/remote.git
+          git init /tmp/lt/work
+          cd /tmp/lt/work
+          git config user.email "test@example.com"
+          git config user.name "Test User"
+          echo one > file.txt
+          git add file.txt
+          git commit -m "first"
+          git remote add origin /tmp/lt/remote.git
+          git push origin HEAD:refs/heads/main HEAD:refs/heads/stable
+          echo two > file.txt
+          git commit -am "second"
+          git push origin HEAD:refs/heads/main
+      - id: action
+        uses: .
+        with:
+          ref: stable
+          force-branch: 'true'
+          git-directory: /tmp/lt/work
+      - name: Assert branch 'stable' moved to HEAD and no tag created
+        run: |
+          HEAD_SHA=$(git -C /tmp/lt/work rev-parse HEAD)
+          REMOTE_SHA=$(git -C /tmp/lt/remote.git rev-parse refs/heads/stable 2>/dev/null || true)
+          echo "head: $HEAD_SHA remote stable: $REMOTE_SHA"
+          if [ "$REMOTE_SHA" != "$HEAD_SHA" ]; then
+            echo "FAIL: branch stable not updated to HEAD"
+            exit 1
+          fi
+          if git -C /tmp/lt/remote.git rev-parse refs/tags/stable >/dev/null 2>&1; then
+            echo "FAIL: a tag named stable should not have been created"
+            exit 1
+          fi
+          echo "PASS"

@@ -1,0 +1,57 @@
+name: Test annotated tag with description and custom ref
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up scratch repo with local bare origin
+        run: |
+          set -e
+          BASE="$RUNNER_TEMP/lt-annotated"
+          rm -rf "$BASE"; mkdir -p "$BASE"
+          git init --bare "$BASE/remote.git"
+          git init "$BASE/work"
+          cd "$BASE/work"
+          git config user.email test@example.com
+          git config user.name Test
+          echo a > a.txt
+          git add a.txt
+          git commit -m first
+          git remote add origin "$BASE/remote.git"
+          git push origin HEAD:refs/heads/main
+          echo "WORK=$BASE/work" >> "$GITHUB_ENV"
+          echo "REMOTE=$BASE/remote.git" >> "$GITHUB_ENV"
+      - id: action
+        uses: .
+        with:
+          ref: stable
+          description: Stable release marker
+          git-directory: ${{ env.WORK }}
+      - name: Assert annotated 'stable' tag with message
+        run: |
+          set -e
+          HEAD_SHA="$(git -C "$WORK" rev-parse HEAD)"
+          TYPE="$(git -C "$REMOTE" cat-file -t stable 2>/dev/null || true)"
+          SHA="$(git -C "$REMOTE" rev-parse 'stable^{commit}' 2>/dev/null || true)"
+          echo "type: $TYPE sha: $SHA head: $HEAD_SHA"
+          if [ "$TYPE" != "tag" ]; then
+            echo "FAIL: expected annotated tag (type tag), got '$TYPE'"
+            exit 1
+          fi
+          if [ "$SHA" != "$HEAD_SHA" ]; then
+            echo "FAIL: tag does not point to HEAD"
+            exit 1
+          fi
+          MSG="$(git -C "$REMOTE" cat-file -p stable)"
+          echo "$MSG"
+          if ! echo "$MSG" | grep -q "Stable release marker"; then
+            echo "FAIL: tag message missing description"
+            exit 1
+          fi
+          if git -C "$REMOTE" rev-parse -q --verify refs/tags/latest >/dev/null; then
+            echo "FAIL: default 'latest' tag should not be created"
+            exit 1
+          fi
+          echo "PASS"

@@ -1,0 +1,51 @@
+name: Test force-branch mode
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up scratch repo with outdated 'release' branch
+        run: |
+          set -e
+          BASE="$RUNNER_TEMP/lt-branch"
+          rm -rf "$BASE"; mkdir -p "$BASE"
+          git init --bare "$BASE/remote.git"
+          git init "$BASE/work"
+          cd "$BASE/work"
+          git config user.email test@example.com
+          git config user.name Test
+          echo a > a.txt
+          git add a.txt
+          git commit -m first
+          git remote add origin "$BASE/remote.git"
+          git push origin HEAD:refs/heads/release
+          echo "OLD_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo b > b.txt
+          git add b.txt
+          git commit -m second
+          git push origin HEAD:refs/heads/main
+          echo "WORK=$BASE/work" >> "$GITHUB_ENV"
+          echo "REMOTE=$BASE/remote.git" >> "$GITHUB_ENV"
+      - id: action
+        uses: .
+        with:
+          ref: release
+          force-branch: 'true'
+          git-directory: ${{ env.WORK }}
+      - name: Assert branch updated and no tag created
+        run: |
+          set -e
+          HEAD_SHA="$(git -C "$WORK" rev-parse HEAD)"
+          SHA="$(git -C "$REMOTE" rev-parse refs/heads/release)"
+          echo "old: $OLD_SHA new: $SHA head: $HEAD_SHA"
+          if [ "$SHA" != "$HEAD_SHA" ]; then
+            echo "FAIL: branch 'release' not updated to HEAD"
+            exit 1
+          fi
+          if git -C "$REMOTE" rev-parse -q --verify refs/tags/release >/dev/null; then
+            echo "FAIL: a tag named 'release' should not exist"
+            exit 1
+          fi
+          echo "PASS"

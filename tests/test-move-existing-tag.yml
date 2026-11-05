@@ -1,0 +1,47 @@
+name: Test force-moving an existing tag
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up scratch repo with an existing outdated 'latest' tag
+        run: |
+          set -e
+          BASE="$RUNNER_TEMP/lt-move"
+          rm -rf "$BASE"; mkdir -p "$BASE"
+          git init --bare "$BASE/remote.git"
+          git init "$BASE/work"
+          cd "$BASE/work"
+          git config user.email test@example.com
+          git config user.name Test
+          echo a > a.txt
+          git add a.txt
+          git commit -m first
+          git tag latest
+          git remote add origin "$BASE/remote.git"
+          git push origin HEAD:refs/heads/main --tags
+          echo "OLD_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo b > b.txt
+          git add b.txt
+          git commit -m second
+          git push origin HEAD:refs/heads/main
+          echo "WORK=$BASE/work" >> "$GITHUB_ENV"
+          echo "REMOTE=$BASE/remote.git" >> "$GITHUB_ENV"
+      - id: action
+        uses: .
+        with:
+          ref: latest
+          git-directory: ${{ env.WORK }}
+      - name: Assert 'latest' moved to new HEAD
+        run: |
+          set -e
+          HEAD_SHA="$(git -C "$WORK" rev-parse HEAD)"
+          SHA="$(git -C "$REMOTE" rev-parse 'latest^{commit}')"
+          echo "old: $OLD_SHA new: $SHA head: $HEAD_SHA"
+          if [ "$SHA" != "$HEAD_SHA" ] || [ "$SHA" = "$OLD_SHA" ]; then
+            echo "FAIL: tag was not moved to new HEAD"
+            exit 1
+          fi
+          echo "PASS"

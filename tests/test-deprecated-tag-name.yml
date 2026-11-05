@@ -1,0 +1,41 @@
+name: Test deprecated tag-name input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up scratch repo with local bare origin
+        run: |
+          set -e
+          BASE="$RUNNER_TEMP/lt-tagname"
+          rm -rf "$BASE"; mkdir -p "$BASE"
+          git init --bare "$BASE/remote.git"
+          git init "$BASE/work"
+          cd "$BASE/work"
+          git config user.email test@example.com
+          git config user.name Test
+          echo a > a.txt
+          git add a.txt
+          git commit -m first
+          git remote add origin "$BASE/remote.git"
+          git push origin HEAD:refs/heads/main
+          echo "WORK=$BASE/work" >> "$GITHUB_ENV"
+          echo "REMOTE=$BASE/remote.git" >> "$GITHUB_ENV"
+      - id: action
+        uses: .
+        with:
+          tag-name: legacy-latest
+          git-directory: ${{ env.WORK }}
+      - name: Assert 'legacy-latest' tag pushed
+        run: |
+          set -e
+          HEAD_SHA="$(git -C "$WORK" rev-parse HEAD)"
+          SHA="$(git -C "$REMOTE" rev-parse 'legacy-latest^{commit}' 2>/dev/null || true)"
+          echo "sha: $SHA head: $HEAD_SHA"
+          if [ "$SHA" != "$HEAD_SHA" ]; then
+            echo "FAIL: legacy-latest tag missing or wrong"
+            exit 1
+          fi
+          echo "PASS"
